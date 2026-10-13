@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+data/
+__pycache__/
+*.pyc
+.venv/
+venv/
+eval/results/*.json
+samples/SYNTHETIC_long_manual.pdf
+.claude/
