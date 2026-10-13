@@ -1,7 +1,7 @@
 # COMPETITION PREFLIGHT — VeriDesk (NED Engineer's Code 2026, RAG Chatbot Builder)
 
 Finish this tonight. Every item marked ✅ was verified on the team laptop on 13–14 Oct 2026.
-Items marked ⏳ are still pending at the time of writing.
+Status as of 14 Oct 00:40: all checks green; Gemini key verified.
 
 ## 1. What the project needs
 
@@ -37,7 +37,7 @@ All settings live in `.env` (git-ignored). The template is `.env.example`.
 | Variable | Needed? | Notes |
 |---|---|---|
 | `GEMINI_API_KEY` | **yes (primary LLM)** | from https://aistudio.google.com → Get API key |
-| `GEMINI_MODEL` | default `gemini-2.5-flash` | change if the key's project lacks access |
+| `GEMINI_MODEL` | default `gemini-3.8-flash` | change if the key's project lacks access |
 | `LLM_PROVIDER` | default `gemini` | `anthropic`, `openai`, `ollama`, `extractive` also work |
 | `LLM_FALLBACKS` | default `extractive` | `ollama,extractive` adds the slow local model |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | optional | only if you switch providers |
@@ -48,7 +48,7 @@ All settings live in `.env` (git-ignored). The template is `.env.example`.
 python scripts/check_setup.py
 ```
 It prints `set (39 chars)`, never the key, and makes one tiny live call per provider (`ping → pong`).
-Expected: `[ OK ] gemini (gemini-2.5-flash): replied 'pong'`.
+Expected: `[ OK ] gemini (gemini-3.8-flash): replied 'pong'`.
 
 ## 5. Account / billing tasks for tonight
 - [ ] Create the Gemini key in Google AI Studio, paste it into `.env`, run `check_setup.py`.
@@ -69,9 +69,9 @@ Expected: `[ OK ] gemini (gemini-2.5-flash): replied 'pong'`.
 | Upload, extraction, chunking, indexing | ✅ yes | ✅ |
 | Local embeddings (bge-small, cached) | ✅ yes | ✅ (model cached) |
 | Hybrid retrieval, evidence gate, inspector | ✅ yes | ✅ |
-| Extractive answers (no LLM) | ✅ yes | ✅ 88.7% on the synthetic eval |
+| Extractive answers (no LLM) | ✅ yes | ✅ 84.9% on the synthetic eval |
 | Ollama local LLM | ✅ yes | ✅ works, ~50 s per answer |
-| Gemini / Claude / OpenAI answers | ❌ needs internet | ⏳ pending key |
+| Gemini / Claude / OpenAI answers | ❌ needs internet | ✅ Gemini 3.8 Flash: 53/53 on the synthetic suite |
 | First-time embedding model download | ❌ needs internet | done already |
 
 ## 8. Startup (one command)

@@ -49,7 +49,13 @@ python scripts/eval.py --ids inj-01,inj-02,inj-03,inj-04,auth-01,auth-02,fab-01,
 ## Results log
 Fill in after each run. Never write a result you didn't observe.
 
-| Date/time | Provider | Adversarial subset pass | Notes |
+| Date/time | Provider | Result (full 53-question synthetic suite) | Notes |
 |---|---|---|---|
-| 13 Oct 23:5x | extractive (no LLM) | see eval/results | all injection/out-of-scope/authority/fabrication cases passed; ambiguity needs the LLM |
-| ⏳ | gemini-2.5-flash | pending key | |
+| 13 Oct 23:49 | extractive (no LLM) | 56.6% (30/53) | first baseline, before the vocabulary check |
+| 14 Oct 00:19 | extractive (no LLM) | 84.9% (45/53) | after table sentences + vocabulary check; all injection/out-of-scope/authority/fabrication cases pass; ambiguity and multi-part need the LLM |
+| 14 Oct 00:04 | ollama qwen2.5:1.5b (8-question subset) | 6/8 | ~50 s per answer; got the Basic-recording false premise wrong, so it was removed from the default chain |
+| 14 Oct 00:26 | gemini-3.8-flash | **100% (53/53)**, p50 3.8 s | 0 invalid citations, 0 unverified numbers |
+| 14 Oct 00:38 | gemini-3.8-flash (regression after UI/stopword changes) | **100% (53/53)**, p50 3.5 s | same |
+
+Caveat: the team wrote this test set alongside the synthetic manual, so it measures that the mechanisms work. It does not predict
+the score on the organisers' PDF. Build `eval/real_doc.json` tomorrow (RUNBOOK §3).

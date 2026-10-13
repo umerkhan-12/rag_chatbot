@@ -47,7 +47,7 @@ def doc_topics(index: DocumentIndex, n: int = 5) -> list[str]:
     tops = []
     for s in index.meta.get("sections", []):
         head = s.split(" > ")[0].split(" ; ")[0].strip()
-        head = re.sub(r"^\d+(\.\d+)*[.)]?\s*", "", head)
+        head = re.sub(r"^[#\s|\-–—:*]*(\d+(\.\d+)*[.)]?)?[\s|\-–—:]*", "", head).strip(" |#")
         if re.match(r"(?i)^(introduction|overview|contents|table of contents|preface|foreword|glossary|index|appendix\b|about this (manual|guide|document))", head):
             continue
         if head and head.lower() not in {t.lower() for t in tops} and len(head) < 60:
@@ -106,7 +106,7 @@ def validate_answer(answer: str, hits, question: str) -> dict:
     for n in used:
         c = hits[n - 1].chunk
         citations.append({"n": n, "chunk_id": c.id, "page_start": c.page_start, "page_end": c.page_end,
-                          "pages_label": c.pages_label, "section": c.section, "excerpt": c.text[:700]})
+                          "pages_label": c.pages_label, "section": c.section, "excerpt": c.text})
 
     sentences = [s for s in re.split(r"(?<=[.!?])\s+|\n+", cleaned) if s.strip()]
     ratios, weak = [], []
@@ -278,7 +278,7 @@ def answer_stream(question: str, history: list[dict] | None = None, index: Docum
         yield _final(s, a, t0, provider="rules", guard="prompt-extraction/injection blocked before retrieval")
         return
 
-    rq = retrieval_query(question, history)
+    rq = retrieval_query(guard.strip_manipulation(question) if analysis.flags else question, history)
     sr = index.search(rq)
     passed, gate_reason = evidence_gate(sr)
     yield {**base_meta, "evidence": [h.to_dict() for h in sr.hits], "retrieval_query": rq,
@@ -364,8 +364,8 @@ def answer_stream(question: str, history: list[dict] | None = None, index: Docum
         warnings.append("Could not verify these figures in the cited document text: " + ", ".join(v["unsupported_numbers"]))
     if status in ("ANSWERED", "PARTIAL") and not v["citations"] and used_provider != "extractive":
         warnings.append("This answer has no citation to the document; treat it with caution.")
-    if v["weakly_supported"]:
-        warnings.append(f"{len(v['weakly_supported'])} sentence(s) are only weakly supported by their cited passage.")
+    # Weak lexical support is a heuristic with false positives (e.g. framing sentences), so it is shown in the
+    # evidence inspector rather than as a user-facing warning.
     if errors and used_provider:
         warnings.append(f"Primary model unavailable; answered with fallback '{used_provider}'.")
 

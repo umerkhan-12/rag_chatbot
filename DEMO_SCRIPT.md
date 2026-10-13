@@ -46,7 +46,7 @@ Open the latest `eval/results/<timestamp>_gemini.md` and read the summary line b
 > "We built a 53-question test set with labelled supporting passages, including absent facts, false premises and
 > injections. Retrieval found the right passage in the top 6 for **[Recall@6 from the report]** of questions. Overall
 > behaviour pass rate was **[overall_pass from the report]**. Even with no language model at all, the extractive
-> fallback scores 88.7% and can't invent anything."
+> fallback scores 84.9% and can't invent anything."
 
 **Only quote numbers from a report you actually generated.** Tomorrow, prefer the numbers from `eval/real_doc.json`.
 

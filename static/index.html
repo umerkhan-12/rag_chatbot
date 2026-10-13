@@ -73,6 +73,8 @@ main{display:flex;flex-direction:column;min-width:0;min-height:0}
 .source .pg{font-weight:600;color:var(--ink)} .source .sec{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
 .source pre{margin:0;padding:10px 12px;border-top:1px solid var(--line-2);white-space:pre-wrap;font-family:var(--font);font-size:13px;color:var(--ink-2);background:#fbfcfe;max-height:260px;overflow:auto}
 .source.flash{outline:2px solid var(--accent)}
+.source .excerpt{padding:8px 12px;border-top:1px solid var(--line-2);font-size:13px;color:var(--ink-2);background:#fbfcfe;max-height:280px;overflow:auto}
+.source .excerpt p{margin:0 0 6px} .source .excerpt table{border-collapse:collapse;margin:4px 0;font-size:12.5px} .source .excerpt td,.source .excerpt th{border:1px solid var(--line);padding:3px 7px;text-align:left}
 .metaline{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px;font-size:12px;color:var(--ink-3)}
 .metaline .sep{opacity:.5}
 .warnbox{margin-top:8px}
@@ -314,7 +316,7 @@ function renderFinal(el, fin, meta){
     src.innerHTML = cites.map(c => `
       <details class="source" data-n="${c.n}">
         <summary><span class="n">${c.n}</span><span class="pg">${esc(c.pages_label)}</span><span class="sec">${esc(c.section)}</span><span style="color:var(--ink-3);font-size:12px">excerpt ▾</span></summary>
-        <pre>${esc(c.excerpt)}${c.excerpt.length >= 700 ? '…' : ''}</pre>
+        <div class="excerpt">${renderMarkdown(c.excerpt.replace(/^##\s+/gm, '### '), [])}</div>
       </details>`).join('');
     bubble.appendChild(src);
   }
@@ -348,6 +350,9 @@ function renderInspector(meta, fin){
   if (g) html += `<b>Evidence gate:</b> <span style="color:${g.passed ? 'var(--ok)' : 'var(--info)'}">${g.passed ? 'passed' : 'blocked (abstained without calling the LLM)'}</span><div style="color:var(--ink-3)">${esc(g.reason)} · mode ${esc(g.mode)}</div>`;
   else html += `<b>Evidence gate:</b> <span style="color:var(--ink-3)">not needed (handled by safety rules)</span>`;
   if (fin && fin.guard) html += `<div style="color:var(--ink-3);margin-top:4px">${esc(fin.guard)}</div>`;
+  if (g && g.missing_terms && g.missing_terms.length) html += `<div style="margin-top:6px"><b>Words not found anywhere in the document:</b> ${g.missing_terms.map(t => `<span class="tag w">${esc(t)}</span>`).join(' ')}</div>`;
+  if (fin && fin.support_score != null) html += `<div style="margin-top:6px"><b>Answer–evidence overlap:</b> ${(fin.support_score*100).toFixed(0)}% <span style="color:var(--ink-3)">(lexical heuristic)</span></div>`;
+  if (fin && fin.weakly_supported && fin.weakly_supported.length) html += `<div style="margin-top:4px;color:var(--warn)">Low-overlap sentences (review): ${fin.weakly_supported.map(s => `<div style="color:var(--ink-2)">“${esc(s)}”</div>`).join('')}</div>`;
   if (flags) html += `<div class="flags">Input flags: ${flags}</div>`;
   if (meta.timings) html += `<div style="color:var(--ink-3);margin-top:6px">Retrieval: ${meta.timings.total_ms} ms (dense ${meta.timings.dense_ms} · BM25 ${meta.timings.bm25_ms})</div>`;
   html += `</div><div class="section-title" style="margin-top:14px">Retrieved passages (ranked by fusion)</div>`;

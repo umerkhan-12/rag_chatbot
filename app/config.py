@@ -15,6 +15,7 @@ load_dotenv(ROOT / ".env", override=False)
 os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 # Never phone home for telemetry.
 os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
+os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
 
 def _env(name: str, default: str = "") -> str:
@@ -69,6 +70,12 @@ MIN_CHUNK_CHARS = _int("MIN_CHUNK_CHARS", 200)  # tiny sections are merged with 
 # gemini = Gemini embedding API, openai = OpenAI text-embedding-3-small, none = BM25 only
 EMBED_PROVIDER = _env("EMBED_PROVIDER", "local").lower()
 LOCAL_EMBED_MODEL = _env("LOCAL_EMBED_MODEL", "BAAI/bge-small-en-v1.5")
+# If the model is already cached, never contact the Hub: without this, each load makes "update check" requests
+# that retry for ~45 s when the network is down (observed during testing).
+_hf_cache = Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface")) / "hub"
+if (_hf_cache / ("models--" + LOCAL_EMBED_MODEL.replace("/", "--")) / "snapshots").exists():
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 LOCAL_EMBED_QUERY_PREFIX = _env(
     "LOCAL_EMBED_QUERY_PREFIX", "Represent this sentence for searching relevant passages: "
 )
@@ -99,7 +106,8 @@ LLM_TEMPERATURE = _float("LLM_TEMPERATURE", 0.1)
 LLM_MAX_TOKENS = _int("LLM_MAX_TOKENS", 900)
 
 GEMINI_API_KEY = _env("GEMINI_API_KEY") or _env("GOOGLE_API_KEY")
-GEMINI_MODEL = _env("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = _env("GEMINI_MODEL", "gemini-3.8-flash")
+GEMINI_FALLBACK_MODEL = _env("GEMINI_FALLBACK_MODEL", "gemini-flash-latest")  # tried if the primary model fails
 GEMINI_BASE_URL = _env("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/")
 
 ANTHROPIC_API_KEY = _env("ANTHROPIC_API_KEY")

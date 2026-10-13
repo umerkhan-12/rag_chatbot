@@ -32,7 +32,8 @@ STOPWORDS = set(
     than too very s t just don also please tell explain describe give know want need does say says said
     manual document guide handbook pdf according now today current currently right exactly exact
     many much often lot lots really actually okay ok hi hello thank thanks kindly sir maam bro anyone someone
-    something anything everything way get got use using let possible sure mean meaning""".split()
+    something anything everything way get got use using let possible sure mean meaning since because while
+    although though whether yes still already ever even like said one per""".split()
 )
 
 
@@ -41,7 +42,9 @@ def tokenize(text: str) -> list[str]:
     out = []
     for t in toks:
         t = t.replace(",", "")
-        if len(t) > 4 and t.endswith("ies"):
+        if t in STOPWORDS:  # keep stopwords unstemmed so later stopword filters recognise them ("does" -> not "doe")
+            out.append(t)
+        elif len(t) > 4 and t.endswith("ies"):
             t = t[:-3] + "y"
         elif len(t) > 5 and t.endswith("ing"):
             t = t[:-3]

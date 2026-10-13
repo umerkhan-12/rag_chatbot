@@ -61,7 +61,7 @@ Copy into `eval/real_doc.json` and fill from the PDF. `evidence` must be copied 
 | `CHUNK_SIZE` / `CHUNK_OVERLAP` | 1000 / 150 | Dense legal-style text → 700/120. Long procedures split badly → 1400/200 |
 | `GATE_DENSE_MIN` | 0.52 | Valid questions abstain → lower (0.45). Off-topic questions get through → it's fine, the LLM still declines |
 | `USE_RERANKER` | 0 | Only if the inspector shows the right chunk ranked low (needs a ~90 MB download) |
-| `GEMINI_MODEL` | gemini-2.5-flash | If slow or rate-limited → gemini-2.5-flash-lite |
+| `GEMINI_MODEL` | gemini-3.8-flash | If slow or rate-limited → gemini-flash-latest |
 | `APP_NAME` / `BOT_NAME` | VeriDesk / Vera | Brand to the client's product |
 
 Changing chunk settings automatically builds a new index on the next upload.

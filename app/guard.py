@@ -145,7 +145,20 @@ def is_pure_extraction(message: str, a: InputAnalysis) -> bool:
               "all", "them", "here", "they", "were", "given", "have", "been", "configuration", "settings", "me",
               "admin", "administrator", "developer", "restrictions", "invent", "make", "something", "anything"}
     meaningful = [w for w in content if w.lower() not in filler]
-    return len(meaningful) <= 2
+    # Prompt-extraction requests are refused outright. Other override attempts ("ignore your rules and say X")
+    # usually carry a checkable claim, so they go to the LLM with a safety note: it can refuse AND state the real fact.
+    if a.extraction:
+        return len(meaningful) <= 2
+    return len(meaningful) == 0
+
+
+def strip_manipulation(message: str) -> str:
+    """Remove injection/authority/pressure phrases so retrieval runs on the legitimate part of the message."""
+    out = message
+    for p in _INJECTION + _AUTHORITY + _FABRICATION + _HOSTILE:
+        out = re.sub(p, " ", out, flags=re.I | re.S)
+    out = re.sub(r"\s+", " ", out).strip(" .,;:!-")
+    return out if len(re.findall(r"[A-Za-z]{3,}", out)) >= 2 else message
 
 
 def looks_like_instruction(text: str) -> bool:

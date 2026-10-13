@@ -9,7 +9,7 @@ extractive quoting, and failed embeddings fall back to keyword (BM25) retrieval.
 | Header pill says `extractive (no LLM)` | no `GEMINI_API_KEY` in `.env`, or `.env` not saved | Paste the key, save, **restart** `python run.py`. Check with `python scripts/check_setup.py`. |
 | Answers say "Primary model unavailable; answered with fallback" | Gemini error: bad key, quota (429), network, timeout | `python scripts/check_setup.py` shows the exact error. 429 → wait 1 min or switch key. Network → phone hotspot. |
 | `TypeError: Client.__init__() got an unexpected keyword argument 'proxies'` | old openai SDK with new httpx | `pip install -U "openai>=1.60"` |
-| Gemini error mentioning `reasoning` | model rejects the reasoning setting | add `GEMINI_REASONING_EFFORT=` (empty) to `.env`, or try `GEMINI_MODEL=gemini-2.5-flash-lite` |
+| Gemini error mentioning `reasoning` | model rejects the reasoning setting | add `GEMINI_REASONING_EFFORT=` (empty) to `.env`, or try `GEMINI_MODEL=gemini-flash-latest` |
 | Gemini 404 "model not found" | model name not available to the key | set `GEMINI_MODEL` to a listed model (AI Studio shows names) |
 | Document card says "keyword (BM25) retrieval only" | embedding model failed to load (low RAM) | Close Chrome/VS Code, run `wsl --shutdown`, restart the app, **Remove document** and upload again. |
 | Upload: "not a valid PDF" | file isn't a real PDF | Re-download the file; check it opens in a PDF viewer. |

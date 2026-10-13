@@ -81,7 +81,7 @@ Changing them automatically builds a new index, because the index directory name
    * sentence-level lexical support score; weakly supported sentences are flagged;
    * answers that claim facts with no citation are flagged.
 5. **Extractive fallback**: if the LLM is unavailable, the system quotes the most relevant sentences verbatim with
-   citations. It can't hallucinate. (Measured 88.7% on the full test set with **no LLM at all**.)
+   citations. It can't hallucinate. (Measured 84.9% on the full test set with **no LLM at all**.)
 
 ## 7. Prompt-injection defence
 * **User side**: regex classifiers flag injection, prompt extraction, authority claims, fabrication pressure and hostility.
