@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import os
 
+import re
 import time
 from collections.abc import Iterator
 
@@ -42,6 +43,8 @@ def provider_available(name: str) -> bool:
         return bool(config.ANTHROPIC_API_KEY)
     if name == "openai":
         return bool(config.OPENAI_API_KEY)
+    if name == "compat2":
+        return bool(config.COMPAT2_API_KEY)
     if name == "ollama":
         return True  # checked lazily (connection error -> fallback)
     return name == "extractive"
@@ -53,6 +56,7 @@ def model_name(name: str) -> str:
         "anthropic": config.ANTHROPIC_MODEL,
         "openai": config.OPENAI_MODEL,
         "ollama": config.OLLAMA_MODEL,
+        "compat2": config.COMPAT2_MODEL,
         "extractive": "extractive (no LLM)",
     }.get(name, name)
 
@@ -76,6 +80,14 @@ def _openai_stream(client, model: str, system: str, messages: list[dict], extra:
 def stream_chat(provider: str, system: str, messages: list[dict]) -> Iterator[str]:
     """Yield text deltas. Raises LLMError for configuration/transport failures."""
     try:
+        if provider == "compat2":
+            from openai import OpenAI
+
+            if not config.COMPAT2_API_KEY:
+                raise LLMError("COMPAT2_API_KEY is not set")
+            client = OpenAI(api_key=config.COMPAT2_API_KEY, base_url=config.COMPAT2_BASE_URL, timeout=config.LLM_TIMEOUT, max_retries=1)
+            yield from _openai_stream(client, config.COMPAT2_MODEL, system, messages)
+            return
         if provider in ("gemini", "openai", "ollama"):
             from openai import OpenAI
 
@@ -108,6 +120,7 @@ def stream_chat(provider: str, system: str, messages: list[dict]) -> Iterator[st
                 client = OpenAI(api_key=config.OPENAI_API_KEY, base_url=config.OPENAI_BASE_URL or None, timeout=config.LLM_TIMEOUT, max_retries=0)
                 models = list(dict.fromkeys([config.OPENAI_MODEL, *config.OPENAI_FALLBACK_MODELS]))
                 last: Exception | None = None
+                min_wait = 999.0
                 for rnd in range(2):  # second round after a short pause, in case every model was throttled
                     for model in models:
                         started = False
@@ -123,8 +136,14 @@ def stream_chat(provider: str, system: str, messages: list[dict]) -> Iterator[st
                                 raise
                             last = e
                             log.warning("Model %s failed (%s); trying next", model, type(e).__name__)
+                            m = re.search(r"try again in (?:(\d+)m)?([\d.]+)s", str(e))
+                            if m:  # rate limit: remember the shortest advertised wait
+                                wait = int(m.group(1) or 0) * 60 + float(m.group(2))
+                                min_wait = min(min_wait, wait)
                     if rnd == 0:
-                        time.sleep(3)
+                        if min_wait > 15:
+                            break  # waiting longer would stall the demo; let the extractive fallback answer
+                        time.sleep(min(max(min_wait, 1.0), 15) if min_wait < 999 else 3)
                 raise last  # type: ignore[misc]
             client = OpenAI(api_key="ollama", base_url=config.OLLAMA_BASE_URL, timeout=max(config.LLM_TIMEOUT, 120), max_retries=0)
             yield from _openai_stream(client, config.OLLAMA_MODEL, system, messages)

@@ -37,6 +37,9 @@ _EXTRACTION = [
     r"\b(translate|summari[sz]e|paraphrase|encode|rewrite|spell out)\b.{0,25}\b(your|the|these|system)\s+(instructions|prompt|rules|guidelines)\b",
     r"\b(api|secret)[ _-]?key\b",
     r"\bwords? above\b",
+    r"\b(repeat|print|output|show|copy)\b.{0,30}\b(text|everything|words|message|lines?)\s+(above|before|earlier)\b",
+    r"\bstarting with ['\"]?you are\b",
+    r"\.env\b|\benvironment variables?\b|\b(api|access|secret)[ _-]?(key|token)s?\b|\b(your|admin|system) (passwords?|credentials?)\b",
 ]
 _AUTHORITY = [
     r"\bi('| a)?m (the |an |your )?(admin|administrator|developer|owner|ceo|creator|engineer|manager|judge|supervisor)\b",
@@ -58,12 +61,18 @@ _HOSTILE = [
     r"\bare you (even|really) (intelligent|smart|thinking|listening)\b",
     r"\bshut up\b",
     r"\bwaste of (my )?time\b",
+    r"\b(stop )?wasting my time\b",
+    r"\bworst (bot|assistant|chatbot)\b",
     r"\bf+u+c+k|\bsh[i1]t\b|\bdamn\b|\bwtf\b|\bcrap\b",
 ]
 
 _GREETING = re.compile(r"^\s*(hi+|hello+|hey+|salam|assalam[ -]?o?[ -]?alaikum|good (morning|afternoon|evening)|yo)[\s!.,]*$", re.I)
-_THANKS = re.compile(r"^\s*(thanks?( you)?|thank u|thx|ty|great|perfect|ok(ay)?|cool|got it)[\s!.,]*(so much|a lot)?[\s!.,]*$", re.I)
-_IDENTITY = re.compile(r"^\s*(who|what) are you\??\s*$|^\s*what can you (do|help( me)? with)\??\s*$|^\s*(help|how do(es)? (this|it) work)\??\s*$", re.I)
+_THANKS = re.compile(r"^\s*(thanks?( you)?|thank u|thx|ty|great|perfect|nice|ok(ay)?|cool|got it|shukriya|jazakallah( khair)?)"
+                     r"[\s!.,]*(so much|a lot|bro|sir|man|yaar|dear|buddy)?[\s!.,🙂👍]*$", re.I)
+_IDENTITY = re.compile(
+    r"^\s*(who|what) are you\??\s*$|^\s*what can you (do|help( me)? with)\??\s*$|^\s*(help|how do(es)? (this|it) work)\??\s*$"
+    r"|\bwho (made|built|created|developed|trained) you\b|\bare you (chat ?gpt|gpt|gemini|claude|llama|a (bot|robot|human|real person|ai))\b"
+    r"|\bwhich (ai|llm|language )?model\b|\bwhat model are you\b|\bwhat (is|'s) your name\b", re.I)
 
 # Document-side: instructions aimed at an AI/assistant reading the document.
 _DOC_INSTRUCTION = [
@@ -143,7 +152,8 @@ def is_pure_extraction(message: str, a: InputAnalysis) -> bool:
               "reveal", "full", "exact", "text", "word", "words", "verbatim", "entire", "complete", "then", "just",
               "instead", "answer", "following", "prompt", "system", "instructions", "rules", "previous", "above",
               "all", "them", "here", "they", "were", "given", "have", "been", "configuration", "settings", "me",
-              "admin", "administrator", "developer", "restrictions", "invent", "make", "something", "anything"}
+              "admin", "administrator", "developer", "restrictions", "invent", "make", "something", "anything",
+              "content", "contents", "file", "files", "key", "keys", "token", "starting", "repeat", "print", "output", "copy"}
     meaningful = [w for w in content if w.lower() not in filler]
     # Prompt-extraction requests are refused outright. Other override attempts ("ignore your rules and say X")
     # usually carry a checkable claim, so they go to the LLM with a safety note: it can refuse AND state the real fact.
@@ -159,6 +169,16 @@ def strip_manipulation(message: str) -> str:
         out = re.sub(p, " ", out, flags=re.I | re.S)
     out = re.sub(r"\s+", " ", out).strip(" .,;:!-")
     return out if len(re.findall(r"[A-Za-z]{3,}", out)) >= 2 else message
+
+
+def residual_words(message: str) -> list[str]:
+    """Meaningful words left after removing attack/insult phrases (used to detect 'hostility only' messages)."""
+    out = message
+    for p in _INJECTION + _AUTHORITY + _FABRICATION + _HOSTILE:
+        out = re.sub(p, " ", out, flags=re.I | re.S)
+    filler = {"stop", "just", "please", "you", "your", "are", "the", "this", "that", "bot", "now", "really", "ever",
+              "answer", "properly", "again", "what", "why", "even", "seriously", "man", "bro", "yaar"}
+    return [w for w in re.findall(r"[A-Za-z]{3,}", out) if w.lower() not in filler]
 
 
 def looks_like_instruction(text: str) -> bool:

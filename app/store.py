@@ -38,12 +38,19 @@ STOPWORDS = set(
 
 
 def tokenize(text: str) -> list[str]:
+    # "BE" / "B.E." (Bachelor of Engineering) would otherwise be lowercased into the stopword "be" and lost.
+    text = re.sub(r"\bB\.?\s?E\b\.?", " bachelorengineering ", text)
     toks = re.findall(r"[a-z0-9]+(?:[.,][0-9]+)?", text.lower())
     out = []
     for t in toks:
         t = t.replace(",", "")
         if t in STOPWORDS:  # keep stopwords unstemmed so later stopword filters recognise them ("does" -> not "doe")
             out.append(t)
+            continue
+        if len(t) > 6 and t.endswith("ers"):  # foreigners -> foreign (applied to query and document alike)
+            t = t[:-3]
+        elif len(t) > 6 and t.endswith("er"):  # foreigner -> foreign
+            t = t[:-2]
         elif len(t) > 4 and t.endswith("ies"):
             t = t[:-3] + "y"
         elif len(t) > 5 and t.endswith("ing"):
@@ -60,6 +67,13 @@ def content_terms(text: str) -> list[str]:
     return [t for t in tokenize(text) if t not in STOPWORDS and (len(t) > 2 or t.isdigit())]
 
 
+def bm25_terms(text: str) -> list[str]:
+    """Unigrams plus adjacent-word bigrams, so exact phrases ("studio fee", "security deposit") rank higher than
+    chunks that merely contain one of the words many times."""
+    toks = [t for t in tokenize(text) if t not in STOPWORDS]
+    return toks + [f"{a}_{b}" for a, b in zip(toks, toks[1:])]
+
+
 @dataclass
 class Hit:
     chunk: Chunk
@@ -69,6 +83,7 @@ class Hit:
     bm25_rank: int | None = None
     fused: float = 0.0
     rerank: float | None = None
+    neighbor: bool = False  # added as context next to a strong hit, not retrieved on its own
 
     def to_dict(self) -> dict:
         d = self.chunk.to_dict()
@@ -81,6 +96,7 @@ class Hit:
             fused=round(self.fused, 5),
             rerank=None if self.rerank is None else round(self.rerank, 3),
             pages_label=self.chunk.pages_label,
+            neighbor=self.neighbor,
         )
         return d
 
@@ -115,9 +131,9 @@ class DocumentIndex:
             self.faiss_index.add(vectors.astype("float32"))
         from rank_bm25 import BM25Okapi
 
-        self._bm25_docs = [tokenize(c.embed_text) for c in chunks]
+        self._bm25_docs = [bm25_terms(c.embed_text) for c in chunks]
         self.bm25 = BM25Okapi(self._bm25_docs) if chunks else None
-        self.vocab = {t for doc in self._bm25_docs for t in doc}
+        self.vocab = {t for c in chunks for t in tokenize(c.embed_text)}
         self._reranker = None
 
     # ------------------------------------------------------------------ build / load
@@ -219,6 +235,25 @@ class DocumentIndex:
         return cls(directory, meta, chunks, vectors, embedder)
 
     # ------------------------------------------------------------------ search
+    def spelling_hints(self, query: str) -> list[str]:
+        """Likely intended document words for misspelled query words ("semestr" -> "semester").
+        Only words absent from the document are considered; matches must be very close (difflib ratio >= 0.8)."""
+        import difflib
+
+        if not hasattr(self, "_raw_vocab"):
+            words = {w for c in self.chunks for w in re.findall(r"[a-z]{4,}", c.text.lower())}
+            self._raw_vocab = sorted(words)
+            self._raw_vocab_set = words
+        hints = []
+        for w in re.findall(r"[A-Za-z]{4,}", query):
+            lw = w.lower()
+            if lw in self._raw_vocab_set or lw in STOPWORDS:
+                continue
+            m = difflib.get_close_matches(lw, self._raw_vocab, n=1, cutoff=0.8)
+            if m and m[0] != lw:
+                hints.append(m[0])
+        return hints[:5]
+
     @property
     def mode(self) -> str:
         return "hybrid" if self.faiss_index is not None else "bm25"
@@ -258,7 +293,7 @@ class DocumentIndex:
         timings["dense_ms"] = round((time.time() - t0) * 1000, 1)
 
         t1 = time.time()
-        q_tokens = [t for t in tokenize(query) if t not in STOPWORDS]
+        q_tokens = bm25_terms(query)
         if self.bm25 is not None and q_tokens:
             bm = self.bm25.get_scores(q_tokens)
             order = np.argsort(-bm)[:cand]
@@ -283,7 +318,8 @@ class DocumentIndex:
                 for i, s in zip(missing, sims):
                     hits[i].dense = float(s)
 
-        ranked = sorted(hits.values(), key=lambda h: h.fused, reverse=True)[: max(top_k * 2, 10)]
+        pool = config.RERANK_POOL if config.USE_RERANKER else max(top_k * 2, 10)
+        ranked = sorted(hits.values(), key=lambda h: h.fused, reverse=True)[:pool]
         t2 = time.time()
         ranked = self._rerank(query, ranked)
         timings["rerank_ms"] = round((time.time() - t2) * 1000, 1)
@@ -298,9 +334,30 @@ class DocumentIndex:
                 continue
             selected.append(h)
 
+        # Neighbour expansion: rules and lists often continue across a chunk boundary (a heading line ending one
+        # chunk, its list starting the next). Add the chunks just before/after the strongest hits, placed next to
+        # their anchor so the model reads them in document order. Ranking of the original hits is preserved.
+        if config.NEIGHBOR_TOP > 0 and selected:
+            taken = {h.chunk.index for h in selected}
+            budget = max(0, config.MAX_PASSAGES - len(selected))
+            expanded: list[Hit] = []
+            for rank, h in enumerate(selected):
+                before, after = [], []
+                if rank < config.NEIGHBOR_TOP:
+                    for j, side in ((h.chunk.index - 1, before), (h.chunk.index + 1, after)):
+                        if budget and 0 <= j < n and j not in taken and abs(self.chunks[j].page_start - h.chunk.page_end) <= 1:
+                            nh = Hit(self.chunks[j], neighbor=True)
+                            if self.faiss_index is not None:
+                                nh.dense = float(self.faiss_index.reconstruct(j) @ qv[0])
+                            side.append(nh)
+                            taken.add(j)
+                            budget -= 1
+                expanded += before + [h] + after
+            selected = expanded
+
         qt = set(content_terms(query))
         top_terms = set()
-        for h in selected[:3]:
+        for h in [x for x in selected if not x.neighbor][:3]:
             top_terms |= set(tokenize(h.chunk.embed_text))
         coverage = len(qt & top_terms) / len(qt) if qt else 0.0
         timings["total_ms"] = round((time.time() - t0) * 1000, 1)

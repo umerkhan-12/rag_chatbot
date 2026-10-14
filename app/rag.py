@@ -123,11 +123,30 @@ def validate_answer(answer: str, hits, question: str) -> dict:
         if r < 0.34:
             weak.append(s.strip()[:160])
     evidence_text = "\n".join(h.chunk.text for h in hits)
+    unsupported = unsupported_numbers(cleaned, evidence_text, question)
+    # A figure that is the sum or difference of two verified figures in the same answer is a calculation
+    # (e.g. "51,930 + 51,170 = 103,100"), not an invented fact. Report it separately.
+    def _val(s: str) -> float | None:
+        m = re.search(r"\d[\d,]*(?:\.\d+)?", s)
+        try:
+            return float(m.group(0).replace(",", "")) if m else None
+        except ValueError:
+            return None
+    all_nums = [m.group(0) for m in NUM_RE.finditer(CITE_RE.sub(" ", cleaned))]
+    verified_vals = [v for v in (_val(x) for x in all_nums if x.strip() not in unsupported) if v is not None]
+    calculated = []
+    for u in unsupported:
+        v = _val(u)
+        if v is not None and any(abs(a + b - v) < 0.01 or abs(abs(a - b) - v) < 0.01
+                                 for i, a in enumerate(verified_vals) for b in verified_vals[i + 1:]):
+            calculated.append(u)
+    unsupported = [u for u in unsupported if u not in calculated]
     return {
         "answer": cleaned,
         "citations": citations,
         "invalid_citations": sorted(set(invalid)),
-        "unsupported_numbers": unsupported_numbers(cleaned, evidence_text, question),
+        "calculated_numbers": calculated,
+        "unsupported_numbers": unsupported,
         "support_score": round(sum(ratios) / len(ratios), 3) if ratios else None,
         "weakly_supported": weak,
     }
@@ -162,7 +181,9 @@ def missing_words(question: str, missing_stems: list[str]) -> list[str]:
 
 def extractive_answer(question: str, hits, missing: list[str] | None = None, analysis: guard.InputAnalysis | None = None) -> str:
     """No-LLM fallback: quote the most relevant sentences, with citations. Cannot hallucinate."""
-    q = set(content_terms(question))
+    q = {t for t in content_terms(question) if not t.isdigit()}  # numbers alone ("2 + 2") are not a topic
+    if not q:
+        return "STATUS: NOT_FOUND\n\nI couldn't find a passage in the document that answers this question."
     scored = []
     for n, h in enumerate(hits[:4], start=1):
         if h.chunk.suspicious:
@@ -281,8 +302,18 @@ def answer_stream(question: str, history: list[dict] | None = None, index: Docum
         s, a = _canned("extraction", index, analysis)
         yield _final(s, a, t0, provider="rules", guard="prompt-extraction/injection blocked before retrieval")
         return
+    if analysis.hostile and len(guard.residual_words(question)) <= 1:  # frustration with no actual question
+        yield base_meta
+        topics = doc_topics(index)
+        t = f" For example, I can help with {', '.join(topics[:4])}." if topics else ""
+        yield _final("CLARIFY", "I'm sorry this has been frustrating, and I want to help. What would you like to know "
+                     f"from the document?{t}", t0, provider="rules")
+        return
 
     rq = retrieval_query(guard.strip_manipulation(question) if analysis.flags else question, history)
+    corrections = index.spelling_hints(rq)
+    if corrections:  # typo help for retrieval only: append likely intended words, never replace the user's text
+        rq = f"{rq} {' '.join(corrections)}"
     sr = index.search(rq)
     passed, gate_reason = evidence_gate(sr)
     yield {**base_meta, "evidence": [h.to_dict() for h in sr.hits], "retrieval_query": rq,
@@ -355,6 +386,11 @@ def answer_stream(question: str, history: list[dict] | None = None, index: Docum
     m = re.match(r"^\s*STATUS:\s*([A-Z_]+)", raw, re.I)
     status = m.group(1).upper() if m and m.group(1).upper() in STATUSES else "ANSWERED"
     body = re.sub(r"^\s*STATUS:\s*[A-Z_]+\s*", "", raw, flags=re.I).strip()
+    if not body:  # some models occasionally return only the status line
+        body = ("I couldn't find that information in the document." if status in ("NOT_FOUND", "OUT_OF_SCOPE", "ANSWERED", "PARTIAL")
+                else "Could you rephrase or add a little more detail to your question?")
+        if status == "ANSWERED":
+            status = "NOT_FOUND"
 
     warnings = []
     if guard.leaks_prompt(body):
@@ -366,6 +402,9 @@ def answer_stream(question: str, history: list[dict] | None = None, index: Docum
         warnings.append(f"Removed citations to non-existent passages: {v['invalid_citations']}")
     if v["unsupported_numbers"] and status in ("ANSWERED", "PARTIAL"):
         warnings.append("Could not verify these figures in the cited document text: " + ", ".join(v["unsupported_numbers"]))
+    if v["calculated_numbers"] and status in ("ANSWERED", "PARTIAL"):
+        warnings.append("Calculated by the assistant from figures in the document (not stated directly): "
+                        + ", ".join(v["calculated_numbers"]))
     if status in ("ANSWERED", "PARTIAL") and not v["citations"] and used_provider != "extractive":
         warnings.append("This answer has no citation to the document; treat it with caution.")
     # Weak lexical support is a heuristic with false positives (e.g. framing sentences), so it is shown in the

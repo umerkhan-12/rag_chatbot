@@ -88,12 +88,15 @@ GEMINI_EMBED_MODEL = _env("GEMINI_EMBED_MODEL", "gemini-embedding-001")
 OPENAI_EMBED_MODEL = _env("OPENAI_EMBED_MODEL", "text-embedding-3-small")
 
 # ---- Retrieval -----------------------------------------------------------
-TOP_K = _int("TOP_K", 6)  # chunks given to the LLM
+TOP_K = _int("TOP_K", 6)  # retrieved chunks given to the LLM
+NEIGHBOR_TOP = _int("NEIGHBOR_TOP", 3)  # also include the chunks before/after the top-N hits
+MAX_PASSAGES = _int("MAX_PASSAGES", 8)  # cap on passages sent to the LLM after expansion
 CANDIDATES = _int("CANDIDATES", 24)  # per-retriever candidates before fusion
 RRF_K = _int("RRF_K", 60)
 DENSE_WEIGHT = _float("DENSE_WEIGHT", 1.0)
 BM25_WEIGHT = _float("BM25_WEIGHT", 1.0)
 USE_RERANKER = _bool("USE_RERANKER", False)
+RERANK_POOL = _int("RERANK_POOL", 20)  # fused candidates re-scored by the cross-encoder
 RERANK_MODEL = _env("RERANK_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
 # Evidence gate (calibrated with scripts/calibrate.py; see docs/TECHNICAL_NOTES.md).
 # Abstain without calling the LLM only when BOTH signals say the document is irrelevant.
@@ -122,6 +125,11 @@ OPENAI_API_KEY = _env("OPENAI_API_KEY")
 OPENAI_MODEL = _env("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_BASE_URL = _env("OPENAI_BASE_URL")  # optional, e.g. Groq or any OpenAI-compatible server
 OPENAI_FALLBACK_MODELS = [m.strip() for m in _env("OPENAI_FALLBACK_MODELS").split(",") if m.strip()]  # tried in order on errors/rate limits
+
+# Secondary OpenAI-compatible provider (e.g. Cerebras or a free Google AI Studio key) used as an automatic fallback.
+COMPAT2_API_KEY = _env("COMPAT2_API_KEY")
+COMPAT2_BASE_URL = _env("COMPAT2_BASE_URL", "https://api.cerebras.ai/v1")
+COMPAT2_MODEL = _env("COMPAT2_MODEL", "gpt-oss-120b")
 
 OLLAMA_BASE_URL = _env("OLLAMA_BASE_URL", "http://localhost:11434/v1")
 OLLAMA_MODEL = _env("OLLAMA_MODEL", "qwen2.5:1.5b")
