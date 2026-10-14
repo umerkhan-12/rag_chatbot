@@ -5,6 +5,7 @@ Secrets (API keys) are read here and never sent to the browser or written to log
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -19,7 +20,9 @@ os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
 
 def _env(name: str, default: str = "") -> str:
-    return os.environ.get(name, default).strip()
+    # Strip inline " # comments" ourselves: python-dotenv keeps them in some cases (e.g. comments with parentheses).
+    v = re.split(r"\s+#", os.environ.get(name, default), maxsplit=1)[0].strip()
+    return "" if v.startswith("#") else v  # a value that is only a comment means "not set"
 
 
 def _int(name: str, default: int) -> int:
@@ -118,6 +121,7 @@ ANTHROPIC_MODEL = _env("ANTHROPIC_MODEL", "claude-sonnet-5-5")
 OPENAI_API_KEY = _env("OPENAI_API_KEY")
 OPENAI_MODEL = _env("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_BASE_URL = _env("OPENAI_BASE_URL")  # optional, e.g. Groq or any OpenAI-compatible server
+OPENAI_FALLBACK_MODELS = [m.strip() for m in _env("OPENAI_FALLBACK_MODELS").split(",") if m.strip()]  # tried in order on errors/rate limits
 
 OLLAMA_BASE_URL = _env("OLLAMA_BASE_URL", "http://localhost:11434/v1")
 OLLAMA_MODEL = _env("OLLAMA_MODEL", "qwen2.5:1.5b")

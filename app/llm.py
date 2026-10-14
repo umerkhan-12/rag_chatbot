@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import logging
 import os
+
+import time
 from collections.abc import Iterator
 
 from . import config
@@ -19,6 +21,18 @@ log = logging.getLogger("veridesk.llm")
 
 class LLMError(Exception):
     pass
+
+
+class _LastModel:  # which model actually answered (fallback models may take over on rate limits); demo is single-user
+    value: str | None = None
+
+
+_last_model = _LastModel()
+
+
+def last_model(provider: str) -> str:
+    m = getattr(_last_model, "value", None)
+    return m if (m and provider == "openai") else model_name(provider)
 
 
 def provider_available(name: str) -> bool:
@@ -89,9 +103,29 @@ def stream_chat(provider: str, system: str, messages: list[dict]) -> Iterator[st
             if provider == "openai":
                 if not config.OPENAI_API_KEY:
                     raise LLMError("OPENAI_API_KEY is not set")
-                client = OpenAI(api_key=config.OPENAI_API_KEY, base_url=config.OPENAI_BASE_URL or None, timeout=config.LLM_TIMEOUT, max_retries=1)
-                yield from _openai_stream(client, config.OPENAI_MODEL, system, messages)
-                return
+                # max_retries=0: on a rate limit we switch to the next model at once instead of waiting.
+                # Free-tier limits (e.g. Groq: 8k tokens/min) are per model, so rotating models multiplies capacity.
+                client = OpenAI(api_key=config.OPENAI_API_KEY, base_url=config.OPENAI_BASE_URL or None, timeout=config.LLM_TIMEOUT, max_retries=0)
+                models = list(dict.fromkeys([config.OPENAI_MODEL, *config.OPENAI_FALLBACK_MODELS]))
+                last: Exception | None = None
+                for rnd in range(2):  # second round after a short pause, in case every model was throttled
+                    for model in models:
+                        started = False
+                        try:
+                            for delta in _openai_stream(client, model, system, messages):
+                                if not started:
+                                    _last_model.value = model
+                                started = True
+                                yield delta
+                            return
+                        except Exception as e:  # noqa: BLE001
+                            if started:
+                                raise
+                            last = e
+                            log.warning("Model %s failed (%s); trying next", model, type(e).__name__)
+                    if rnd == 0:
+                        time.sleep(3)
+                raise last  # type: ignore[misc]
             client = OpenAI(api_key="ollama", base_url=config.OLLAMA_BASE_URL, timeout=max(config.LLM_TIMEOUT, 120), max_retries=0)
             yield from _openai_stream(client, config.OLLAMA_MODEL, system, messages)
             return

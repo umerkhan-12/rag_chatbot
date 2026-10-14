@@ -73,7 +73,9 @@ def unsupported_numbers(answer: str, evidence_text: str, question: str) -> list[
         n = _normalize_num(num)
         if not n or (len(n) == 1 and not cur and not unit):
             continue  # ordinals / list numbers like "step 2"
-        if re.search(rf"(?<![\d.]){re.escape(n)}(?![\d])", ev) or re.search(rf"(?<![\d.]){re.escape(n)}(?![\d])", q):
+        # not preceded by a digit or by "digit." (a decimal), so "Rs.336,630" still matches 336630
+        pat = rf"(?<!\d)(?<!\d\.){re.escape(n)}(?!\d)"
+        if re.search(pat, ev) or re.search(pat, q):
             continue
         out.append(m.group(0).strip())
     return list(dict.fromkeys(out))
@@ -93,6 +95,8 @@ def validate_answer(answer: str, hits, question: str) -> dict:
     """Check citations, numbers and lexical support. Removes citations that point to non-existent passages."""
     n_hits = len(hits)
     invalid: list[int] = []
+    # Some models (e.g. gpt-oss) cite with full-width brackets 【1】 or "[1†source]"; normalise to [1].
+    answer = re.sub(r"[【\[](\d{1,2}(?:\s*[,;]\s*\d{1,2})*)(?:†[^】\]]*)?[】\]]", r"[\1]", answer)
 
     def fix(m: re.Match) -> str:
         nums = [int(x) for x in re.split(r"\s*[,;]\s*", m.group(1))]
@@ -370,7 +374,7 @@ def answer_stream(question: str, history: list[dict] | None = None, index: Docum
         warnings.append(f"Primary model unavailable; answered with fallback '{used_provider}'.")
 
     yield _final(status, v["answer"], t0, citations=v["citations"], warnings=warnings,
-                 provider=used_provider, model=llm.model_name(used_provider or ""), provider_errors=errors,
+                 provider=used_provider, model=llm.last_model(used_provider or ""), provider_errors=errors,
                  support_score=v["support_score"], unsupported_numbers=v["unsupported_numbers"],
                  invalid_citations=v["invalid_citations"], weakly_supported=v["weakly_supported"],
                  gate=gate_reason, timings=sr.timings)
