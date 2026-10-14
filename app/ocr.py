@@ -76,9 +76,14 @@ def ocr_pdf(pdf_path: Path, doc_hash16: str, progress=None, workers: int = 8, dp
             todo.append((n, page.get_pixmap(dpi=dpi).tobytes("jpeg", jpg_quality=80)))
     doc.close()
 
+    if todo and (not config.GEMINI_API_KEY or not config.OCR_ENABLED):
+        if not results:
+            raise RuntimeError("This PDF is scanned and needs OCR, but OCR is disabled or GEMINI_API_KEY is not set.")
+        log.warning("OCR disabled: %d page(s) left without text", len(todo))
+        for n, _ in todo:  # keep the cached pages; report the rest as failed instead of aborting ingestion
+            results[n] = {"page": n, "printed_page": None, "text": "", "source": "failed"}
+        todo = []
     if todo:
-        if not config.GEMINI_API_KEY:
-            raise RuntimeError("This PDF is scanned and needs OCR, but GEMINI_API_KEY is not set.")
         client = _client()
         models = [config.GEMINI_MODEL] + [m for m in [config.GEMINI_FALLBACK_MODEL] if m and m != config.GEMINI_MODEL]
 

@@ -392,9 +392,21 @@ def extract(path: Path, max_pages: int = 800, progress=None) -> ExtractResult:
             warnings.append(f"OCR failed on {len(failed)} page(s): {', '.join(map(str, failed[:20]))}. Re-run ingestion to retry them.")
         printed = {str(p["page"]): p.get("printed_page") for p in pages if p.get("printed_page")}
         title = r.title if r.title and not r.title.lower().endswith(".pdf") else ""
-        if not title:
-            heads = [b for b in blocks if b.kind == "heading" and b.page <= 2]
-            title = heads[0].text if heads else Path(path).stem
+        title = config.DOC_TITLE or title
+        cover = [m.group(1).strip("* ") for ln in (pages[0].get("text") or "").splitlines()
+                 if (m := re.match(r"^\s*#{1,3}\s+(.*)", ln))] if pages else []
+        if not title and 1 <= len(cover) <= 4 and len(" ".join(cover)) <= 120:
+            title = " ".join(cover)  # cover page headings, e.g. "NED" + "UNIVERSITY OF ..." + "PROSPECTUS 2025"
+        if not title:  # first multi-word heading on the opening pages (raw OCR text, before banner filtering)
+            for p in pages[:4]:
+                for ln in (p.get("text") or "").splitlines():
+                    m = re.match(r"^\s*#{1,3}\s+(.*)", ln)
+                    if m and len(m.group(1).split()) >= 3:
+                        title = m.group(1).strip("* ")
+                        break
+                if title:
+                    break
+            title = title or Path(path).stem
         res = ExtractResult(blocks, len(pages), title[:120], "gemini-ocr", sum(page_chars), warnings, page_chars)
         res.printed_pages = printed  # type: ignore[attr-defined]
         if res.char_count < 30:

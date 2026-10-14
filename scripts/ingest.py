@@ -12,6 +12,10 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Windows console/file output
+except Exception:  # noqa: BLE001
+    pass
 
 from app import rag  # noqa: E402
 from app.ingest import IngestError  # noqa: E402

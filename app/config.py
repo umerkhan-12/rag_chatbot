@@ -49,6 +49,8 @@ for _d in (DATA_DIR, UPLOAD_DIR, INDEX_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
 APP_NAME = _env("APP_NAME", "VeriDesk")
+DOC_TITLE = _env("DOC_TITLE")  # optional override for the document title shown to users
+OCR_ENABLED = _bool("OCR_ENABLED", True)  # Gemini vision OCR for scanned PDFs
 BOT_NAME = _env("BOT_NAME", "Vera")
 
 # ---- Upload limits -------------------------------------------------------
