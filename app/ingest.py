@@ -379,17 +379,17 @@ def extract(path: Path, max_pages: int = 800, progress=None) -> ExtractResult:
         from . import config
         from .ocr import ocr_pdf
 
-        if not config.GEMINI_API_KEY:
-            raise IngestError(
-                "This PDF is scanned (no text layer) and needs OCR. Set GEMINI_API_KEY in .env to enable Gemini OCR."
-            )
-        pages = ocr_pdf(Path(path), file_sha256(Path(path))[:16], progress=progress)
+        try:  # cached OCR pages are used without any API call; a key is only needed for uncached pages
+            pages = ocr_pdf(Path(path), file_sha256(Path(path))[:16], progress=progress)
+        except RuntimeError as e:
+            raise IngestError(f"This PDF is scanned (no text layer) and needs OCR: {e}") from e
         failed = [p["page"] for p in pages if p["source"] == "failed"]
         blocks = _markdown_pages_to_blocks(pages)
         page_chars = [len(p.get("text") or "") for p in pages]
         warnings = ["Scanned PDF: text was extracted with Gemini OCR (verbatim transcription of each page image)."]
         if failed:
-            warnings.append(f"OCR failed on {len(failed)} page(s): {', '.join(map(str, failed[:20]))}. Re-run ingestion to retry them.")
+            warnings.append(f"Not indexed (no OCR text available): page(s) {', '.join(map(str, failed[:20]))}. "
+                            "Questions about content on those pages cannot be answered.")
         printed = {str(p["page"]): p.get("printed_page") for p in pages if p.get("printed_page")}
         title = r.title if r.title and not r.title.lower().endswith(".pdf") else ""
         title = config.DOC_TITLE or title
