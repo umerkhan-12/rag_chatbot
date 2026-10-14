@@ -1,7 +1,8 @@
 .env
 .env.*
 !.env.example
-data/
+data/*
+!data/pages/
 __pycache__/
 *.pyc
 .venv/

@@ -27,6 +27,11 @@ GEMINI_API_KEY=<gemini key>
 GEMINI_MODEL=gemini-flash-lite-latest
 OCR_ENABLED=0                            # OCR already done and cached; never re-run paid OCR by accident
 ```
+**OCR cache included:** `data/pages/0b3c2a3207758ba9/` holds the verbatim OCR transcription of the prospectus
+(121 of 122 pages, one JSON file per page). With it, indexing the prospectus needs **no OCR and no paid API**:
+put `UGProspectus2025.pdf` in the project folder, set `OCR_ENABLED=0`, and run
+`python scripts/ingest.py UGProspectus2025.pdf` (the cache is matched by the PDF's SHA-256 hash).
+
 Answer chain: **Groq → Gemini (backup) → extractive quotes**. If every model fails, the bot still answers with
 verbatim, cited passages and never invents content.
 Without any key the app still works in **extractive mode** (cited verbatim quotes, no generation).
