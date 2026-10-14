@@ -22,8 +22,13 @@ OPENAI_API_KEY=<groq key>
 OPENAI_BASE_URL=https://api.groq.com/openai/v1
 OPENAI_MODEL=qwen/qwen3.8-27b
 OPENAI_FALLBACK_MODELS=openai/gpt-oss-120b,openai/gpt-oss-20b
-LLM_FALLBACKS=extractive
+LLM_FALLBACKS=gemini,extractive          # backup: Gemini flash-lite, then cited quotes
+GEMINI_API_KEY=<gemini key>
+GEMINI_MODEL=gemini-flash-lite-latest
+OCR_ENABLED=0                            # OCR already done and cached; never re-run paid OCR by accident
 ```
+Answer chain: **Groq → Gemini (backup) → extractive quotes**. If every model fails, the bot still answers with
+verbatim, cited passages and never invents content.
 Without any key the app still works in **extractive mode** (cited verbatim quotes, no generation).
 
 ### Measured results
