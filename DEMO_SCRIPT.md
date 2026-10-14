@@ -5,6 +5,8 @@ time, holds the phone hotspot). Rehearse twice with a timer.
 
 ---
 
+> Organiser slide: **5–10 minutes, verbal, with a live demo**, and explain **what you chose, why, and what you would improve**. Judges may ask questions you have not seen.
+
 ## Part 1 — The problem and our promise (0:00–1:00)
 > "The client's support team is drowning in repetitive questions, and a chatbot that **invents** a refund policy or a
 > feature is worse than no chatbot. So we designed VeriDesk around one rule: **every answer is either backed by a cited
@@ -98,6 +100,18 @@ Open the latest `eval/results/<timestamp>_gemini.md` and read the summary line b
 17. **Why not LangChain?** We implemented each step directly (about 2,100 lines of Python in app/), so every decision is visible
     and testable, with fewer dependencies to break in a 4-hour window. The listed components (FAISS, Sentence-Transformers,
     pdfplumber, Claude/OpenAI-compatible APIs) are all used.
+
+## What we would improve (the organisers explicitly ask for this)
+Say 2–3 of these. They're honest limitations of our current build:
+1. **OCR for scanned pages**: today we detect and reject them. Next step: an OCR pass so image-only pages become searchable.
+2. **Entailment-based answer checking**: our support check is word overlap. A small NLI model could verify each
+   sentence against its cited passage more reliably.
+3. **Evaluation on more real questions**: our test set has dozens of questions. With real support logs we would tune
+   chunk size, top-k and the gate threshold on hundreds of real user questions.
+4. **Smarter follow-ups**: we expand follow-up questions with the previous question. An LLM query rewriter would handle
+   long multi-turn conversations better.
+5. **Reranking only when needed**: a cross-encoder reranker is implemented but off. We'd enable it once real data showed
+   retrieval misses.
 
 ## Claims we must NOT make
 * ❌ "It never hallucinates" → ✅ "It's designed to abstain, and we measured how often it does so correctly."

@@ -9,3 +9,7 @@ venv/
 eval/results/*.json
 samples/SYNTHETIC_long_manual.pdf
 .claude/
+
+# briefing photos (kept locally, not submitted)
+*.jpeg
+*.jpg
