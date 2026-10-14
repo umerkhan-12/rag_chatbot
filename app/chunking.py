@@ -33,13 +33,15 @@ class Chunk:
     page_end: int
     has_table: bool
     suspicious: bool  # contains instruction-like text aimed at AI systems (treated as untrusted)
+    printed: str = ""  # page number printed on the paper page (scanned/OCR documents), if different
 
     def to_dict(self) -> dict:
         return asdict(self)
 
     @property
     def pages_label(self) -> str:
-        return f"p. {self.page_start}" if self.page_start == self.page_end else f"pp. {self.page_start}-{self.page_end}"
+        label = f"p. {self.page_start}" if self.page_start == self.page_end else f"pp. {self.page_start}-{self.page_end}"
+        return f"{label} (printed {self.printed})" if self.printed else label
 
 
 @dataclass

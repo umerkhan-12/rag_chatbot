@@ -141,10 +141,15 @@ class DocumentIndex:
 
         if progress:
             progress("Extracting text")
-        ext = extract(pdf_path, config.MAX_PAGES)
+        ext = extract(pdf_path, config.MAX_PAGES, progress=progress)
         if progress:
             progress("Chunking")
         chunks = chunk_blocks(ext.blocks, ext.title, doc_hash)
+        printed_map = getattr(ext, "printed_pages", {}) or {}
+        for c in chunks:
+            a, b = printed_map.get(str(c.page_start)), printed_map.get(str(c.page_end))
+            if a and a != str(c.page_start):
+                c.printed = a if (c.page_start == c.page_end or not b) else f"{a}-{b}"
         if not chunks:
             raise IngestError("No usable text chunks were produced from this PDF.")
         t_extract = time.time() - t0

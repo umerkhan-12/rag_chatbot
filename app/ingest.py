@@ -288,7 +288,122 @@ def _extract_pypdf(path: Path) -> ExtractResult:
     return ExtractResult(_text_pages_to_blocks(pages), len(pages), "", "pypdf", sum(pc), [], pc)
 
 
-def extract(path: Path, max_pages: int = 800) -> ExtractResult:
+def _markdown_pages_to_blocks(pages: list[dict]) -> list[Block]:
+    """Convert OCR Markdown (per page) into blocks: '#' headings, '|' tables, '-'/'1.' lists (indented lines continue
+    the item), '**Title**' lines as headings, everything else paragraphs."""
+    # Running banners (e.g. the document title printed on every page) must not become section headings.
+    head_pages: Counter = Counter()
+    min_level: dict[str, int] = {}
+    for rec in pages:
+        seen = set()
+        for ln in (rec.get("text") or "").splitlines():
+            m = re.match(r"^\s*(#{1,6})\s+(.*)", ln)
+            if m:
+                k = _norm_repeat_key(m.group(2).strip("* "))
+                seen.add(k)
+                min_level[k] = min(min_level.get(k, 9), len(m.group(1)))
+        head_pages.update(seen)
+    # A heading repeated on several pages is a banner if it is top-level (#/##) or long. Short repeated
+    # sub-headings like "### Professors" are real structure and are kept.
+    banner = {k for k, c in head_pages.items()
+              if c >= max(3, len(pages) * 0.04) and (min_level[k] <= 2 or len(k.split()) >= 3)}
+
+    blocks: list[Block] = []
+    for rec in pages:
+        n = rec["page"]
+        lines = (rec.get("text") or "").splitlines()
+        para: list[str] = []
+        table: list[str] = []
+
+        def flush_para():
+            if para:
+                blocks.append(Block("para", _clean(" ".join(para)), n))
+                para.clear()
+
+        def flush_table():
+            if table:
+                rows = [r for r in table if r.strip()]
+                if len(rows) >= 2:
+                    blocks.append(Block("table", "\n".join(rows), n))
+                else:
+                    blocks.append(Block("para", _clean(" ".join(rows).strip("| ")), n))
+                table.clear()
+
+        for raw in lines:
+            line = raw.rstrip()
+            s = line.strip()
+            if s.startswith("|"):
+                flush_para()
+                table.append(s)
+                continue
+            flush_table()
+            if not s:
+                flush_para()
+                continue
+            m = re.match(r"^(#{1,6})\s+(.*)", s)
+            bold = re.fullmatch(r"\*\*([^*]{2,100})\*\*:?", s)
+            if m or bold:
+                flush_para()
+                text = (m.group(2) if m else bold.group(1)).strip("* ")
+                level = min(len(m.group(1)), 4) if m else 3
+                key = _norm_repeat_key(text)
+                if key in banner or (len(key) >= 6 and any(key in b for b in banner)):
+                    continue  # banner, or a fragment of one (e.g. "NED UNIVERSITY")
+                if text:
+                    blocks.append(Block("heading", _clean(text), n, level))
+                continue
+            if BULLET_RE.match(s):
+                flush_para()
+                blocks.append(Block("list", _clean(s.replace("**", "")), n))
+                continue
+            if raw[:1] in (" ", "\t") and blocks and blocks[-1].kind == "list" and blocks[-1].page == n and not para:
+                blocks[-1].text += " " + _clean(s.replace("**", ""))  # continuation of a list item
+                continue
+            para.append(s.replace("**", ""))
+        flush_table()
+        flush_para()
+    return [b for b in blocks if b.text]
+
+
+def _needs_ocr(r: ExtractResult) -> bool:
+    if not r.page_count:
+        return False
+    empty = sum(1 for c in r.page_chars if c < 50)
+    return empty / r.page_count > 0.5
+
+
+def extract(path: Path, max_pages: int = 800, progress=None) -> ExtractResult:
+    """Extract structured blocks; scanned PDFs are OCR'd with Gemini vision when a key is configured."""
+    r = _extract_text_layer(path, max_pages)
+    if _needs_ocr(r):
+        from . import config
+        from .ocr import ocr_pdf
+
+        if not config.GEMINI_API_KEY:
+            raise IngestError(
+                "This PDF is scanned (no text layer) and needs OCR. Set GEMINI_API_KEY in .env to enable Gemini OCR."
+            )
+        pages = ocr_pdf(Path(path), file_sha256(Path(path))[:16], progress=progress)
+        failed = [p["page"] for p in pages if p["source"] == "failed"]
+        blocks = _markdown_pages_to_blocks(pages)
+        page_chars = [len(p.get("text") or "") for p in pages]
+        warnings = ["Scanned PDF: text was extracted with Gemini OCR (verbatim transcription of each page image)."]
+        if failed:
+            warnings.append(f"OCR failed on {len(failed)} page(s): {', '.join(map(str, failed[:20]))}. Re-run ingestion to retry them.")
+        printed = {str(p["page"]): p.get("printed_page") for p in pages if p.get("printed_page")}
+        title = r.title if r.title and not r.title.lower().endswith(".pdf") else ""
+        if not title:
+            heads = [b for b in blocks if b.kind == "heading" and b.page <= 2]
+            title = heads[0].text if heads else Path(path).stem
+        res = ExtractResult(blocks, len(pages), title[:120], "gemini-ocr", sum(page_chars), warnings, page_chars)
+        res.printed_pages = printed  # type: ignore[attr-defined]
+        if res.char_count < 30:
+            raise IngestError("OCR produced no text. The pages may be blank or unreadable.")
+        return res
+    return _finish_checks(r, path)
+
+
+def _extract_text_layer(path: Path, max_pages: int = 800) -> ExtractResult:
     """Extract structured blocks, trying extractors in order and validating quality."""
     path = Path(path)
     with open(path, "rb") as f:
@@ -314,8 +429,12 @@ def extract(path: Path, max_pages: int = 800) -> ExtractResult:
         raise IngestError("Text extraction failed with every extractor: " + "; ".join(errors))
     if result.page_count > max_pages:
         raise IngestError(f"The PDF has {result.page_count} pages; the limit is {max_pages}.")
+    return result
 
-    # Quality checks
+
+def _finish_checks(result: ExtractResult, path: Path) -> ExtractResult:
+    """Quality checks for text-layer PDFs."""
+    path = Path(path)
     if result.char_count < 30:
         raise IngestError(
             "No extractable text was found. This looks like a scanned or image-only PDF. "
